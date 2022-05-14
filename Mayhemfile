@@ -1,0 +1,8 @@
+project: rnshah9/mayhem-c-ray
+target: c-ray
+tests: 
+  - file://input/
+
+cmds:
+  - cmd: /repo/build/bin/c-ray @@
+    filepath: /test.json
