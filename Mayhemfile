@@ -1,8 +1,8 @@
-project: rnshah9/mayhem-c-ray
+project: c-ray
 target: c-ray
-tests: 
+testsuite: 
   - file://input/
 
 cmds:
-  - cmd: /repo/build/bin/c-ray @@
+  - cmd: /repo/build/bin/c-ray /test.json
     filepath: /test.json
