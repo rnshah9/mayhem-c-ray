@@ -4,4 +4,4 @@ testsuite:
   - file://input/
 
 cmds:
-  - cmd: /repo/build/bin/c-ray @@
+  - cmd: /c-ray @@
