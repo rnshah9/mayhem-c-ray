@@ -4,5 +4,4 @@ testsuite:
   - file://input/
 
 cmds:
-  - cmd: /repo/build/bin/c-ray /test.json
-    filepath: /test.json
+  - cmd: /repo/build/bin/c-ray @@
