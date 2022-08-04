@@ -17,16 +17,19 @@
 #define test_assert(x) if (!(x)) { failed_expression = #x; return false; }
 
 // And an approximate one for math stuff
-#define roughly_equals(a, b) \
+#define _roughly_equals(a, b, tolerance) \
 	do { \
 		float expect_close_lhs = a; \
 		float expect_close_rhs = b; \
 		float expect_close_diff = (float)(expect_close_lhs) - (float)(expect_close_rhs); \
-		if (fabsf(expect_close_diff) > 0.0000005) { \
+		if (fabsf(expect_close_diff) > tolerance) { \
 			failed_expression = "roughly_equals (" #a " !≈ " #b ")";\
 			return false; \
 		} \
 	} while (false)
+
+#define roughly_equals(a, b) _roughly_equals(a, b, 0.0000005)
+#define very_roughly_equals(a, b) _roughly_equals(a, b, 0.01)
 
 #define vec_roughly_equals(veca, vecb) \
 	do { \
@@ -66,12 +69,12 @@ int runTests(char *suite) {
 	
 	logr(info, "Running %u test%s.\n", test_count, PLURAL(test_count));
 	struct timeval t;
-	startTimer(&t);
+	timer_start(&t);
 	for (unsigned t = 0; t < test_count; ++t) {
 		runTest(t, suite);
 	}
 	logr(info, "Ran %u test%s in ", test_count, test_count > /* DISABLES CODE */ (1) ? "s" : "");
-	printSmartTime(getMs(t));
+	printSmartTime(timer_get_ms(t));
 	printf("\n");
 	return 0;
 }
@@ -86,12 +89,12 @@ int runPerfTests(char *suite) {
 	logr(info, "Running %u test%s.\n", test_count, PLURAL(test_count));
 	logr(info, "Averaging runtime from %i runs for each test.\n", PERF_AVG_COUNT);
 	struct timeval t;
-	startTimer(&t);
+	timer_start(&t);
 	for (unsigned t = 0; t < test_count; ++t) {
 		runPerfTest(t, suite);
 	}
 	logr(info, "Ran %u performance test%s in ", test_count, test_count > /* DISABLES CODE */ (1) ? "s" : "");
-	printSmartTime(getMs(t));
+	printSmartTime(timer_get_ms(t));
 	printf("\n");
 	return 0;
 }
@@ -107,9 +110,9 @@ int runTest(unsigned t, char *suite) {
 		 tests[first_idx + t].testName);
 	
 	struct timeval test;
-	startTimer(&test);
+	timer_start(&test);
 	bool pass = tests[first_idx + t].func();
-	time_t usecs = getUs(test);
+	time_t usecs = timer_get_us(test);
 	
 	printf(
 		 "[%s%s%s] "

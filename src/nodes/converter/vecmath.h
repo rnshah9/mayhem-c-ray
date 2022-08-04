@@ -19,6 +19,15 @@ enum vecOp {
 	VecReflect,
 	VecLength,
 	VecAbs,
+	VecMin,
+	VecMax,
+	VecFloor,
+	VecCeil,
+	VecSin,
+	VecCos,
+	VecTan,
+	VecModulo,
+	VecDistance,
 };
 
-const struct vectorNode *newVecMath(const struct world *world, const struct vectorNode *A, const struct vectorNode *B, const enum vecOp op);
+const struct vectorNode *newVecMath(const struct node_storage *s, const struct vectorNode *A, const struct vectorNode *B, const enum vecOp op);

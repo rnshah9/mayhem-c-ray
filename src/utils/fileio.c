@@ -21,11 +21,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #endif
-#include "args.h"
 #include "filecache.h"
 #include "textbuffer.h"
+#include "args.h"
 
-char *getFileExtension(const char *fileName) {
+static char *getFileExtension(const char *fileName) {
 	lineBuffer *line = newLineBuffer();
 	fillLineBuffer(line, fileName, '.');
 	if (line->amountOf.tokens != 2) {
@@ -73,8 +73,8 @@ enum fileType guessFileType(const char *filePath) {
 	return type;
 }
 
-char *loadFile(const char *filePath, size_t *bytes) {
-	if (isSet("is_worker")) return loadFromCache(filePath, bytes);
+char *loadFile(const char *filePath, size_t *bytes, struct file_cache *cache) {
+	if (cache && cache_contains(cache, filePath)) return cache_load(cache, filePath, bytes);
 	FILE *file = fopen(filePath, "rb");
 	if (!file) {
 		logr(warning, "Can't access '%.*s': %s\n", (int)strlen(filePath), filePath, strerror(errno));
@@ -95,7 +95,7 @@ char *loadFile(const char *filePath, size_t *bytes) {
 	}
 	fclose(file);
 	if (bytes) *bytes = readBytes;
-	if (isSet("use_clustering")) cacheFile(filePath, buf, readBytes);
+	if (cache) cache_store(cache, filePath, buf, readBytes);
 	return buf;
 }
 
@@ -129,8 +129,8 @@ void writeFile(const unsigned char *buf, size_t bufsize, const char *filePath) {
 }
 
 
-bool isValidFile(char *path) {
-	if (isSet("is_worker")) return cacheContains(path);
+bool isValidFile(char *path, struct file_cache *cache) {
+	if (!isSet("use_clustering") && cache) return cache_contains(cache, path);
 #ifndef WINDOWS
 	struct stat path_stat;
 	stat(path, &path_stat);
@@ -145,21 +145,20 @@ bool isValidFile(char *path) {
 #endif
 }
 
-//Wait for 2 secs and abort if nothing is coming in from stdin
-void checkBuf() {
+void wait_for_stdin(int seconds) {
 #ifndef WINDOWS
 	fd_set set;
 	struct timeval timeout;
 	int rv;
 	FD_ZERO(&set);
 	FD_SET(0, &set);
-	timeout.tv_sec = 2;
+	timeout.tv_sec = seconds;
 	timeout.tv_usec = 1000;
 	rv = select(1, &set, NULL, NULL, &timeout);
 	if (rv == -1) {
 		logr(error, "Error on stdin timeout\n");
 	} else if (rv == 0) {
-		logr(error, "No input found after %li seconds. Hint: Try `./bin/c-ray input/scene.json`.\n", timeout.tv_sec);
+		logr(error, "No input found after %i seconds. Hint: Try `./bin/c-ray input/scene.json`.\n", seconds);
 	} else {
 		return;
 	}
@@ -213,7 +212,7 @@ char *getFilePath(const char *input) {
 #define chunksize 1024
 //Get scene data from stdin and return a pointer to it
 char *readStdin(size_t *bytes) {
-	checkBuf();
+	wait_for_stdin(2);
 	
 	char chunk[chunksize];
 	

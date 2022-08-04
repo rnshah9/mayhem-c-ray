@@ -27,7 +27,7 @@
 #include "../../datatypes/image/imagefile.h"
 #include "../../renderer/renderer.h"
 #include "textureloader.h"
-#include "../../datatypes/instance.h"
+#include "../../renderer/instance.h"
 #include "../../utils/args.h"
 #include "../../utils/timer.h"
 #include "../../utils/string.h"
@@ -612,13 +612,12 @@ static void parseCameras(struct camera **cam, size_t *cam_count, const cJSON *da
 }
 
 struct color parseColor(const cJSON *data) {
-	struct color newColor;
 	if (cJSON_IsArray(data)) {
-		newColor.red =   cJSON_IsNumber(cJSON_GetArrayItem(data, 0)) ? cJSON_GetArrayItem(data, 0)->valuedouble : 0.0f;
-		newColor.green = cJSON_IsNumber(cJSON_GetArrayItem(data, 1)) ? cJSON_GetArrayItem(data, 1)->valuedouble : 0.0f;
-		newColor.blue =  cJSON_IsNumber(cJSON_GetArrayItem(data, 2)) ? cJSON_GetArrayItem(data, 2)->valuedouble : 0.0f;
-		newColor.alpha = cJSON_IsNumber(cJSON_GetArrayItem(data, 3)) ? cJSON_GetArrayItem(data, 3)->valuedouble : 1.0f;
-		return newColor;
+		const float r = cJSON_IsNumber(cJSON_GetArrayItem(data, 0)) ? cJSON_GetArrayItem(data, 0)->valuedouble : 0.0f;
+		const float g = cJSON_IsNumber(cJSON_GetArrayItem(data, 1)) ? cJSON_GetArrayItem(data, 1)->valuedouble : 0.0f;
+		const float b = cJSON_IsNumber(cJSON_GetArrayItem(data, 2)) ? cJSON_GetArrayItem(data, 2)->valuedouble : 0.0f;
+		const float a = cJSON_IsNumber(cJSON_GetArrayItem(data, 3)) ? cJSON_GetArrayItem(data, 3)->valuedouble : 1.0f;
+		return (struct color){ r, g, b, a };
 	}
 	
 	ASSERT(cJSON_IsObject(data));
@@ -627,40 +626,33 @@ struct color parseColor(const cJSON *data) {
 	const cJSON *G = NULL;
 	const cJSON *B = NULL;
 	const cJSON *A = NULL;
+	const cJSON *H = NULL;
+	const cJSON *S = NULL;
+	const cJSON *L = NULL;
 	const cJSON *kelvin = NULL;
 	
 	kelvin = cJSON_GetObjectItem(data, "blackbody");
-	if (kelvin && cJSON_IsNumber(kelvin)) {
-		newColor = colorForKelvin(kelvin->valuedouble);
-		return newColor;
+	if (cJSON_IsNumber(kelvin)) return colorForKelvin(kelvin->valuedouble);
+
+	H = cJSON_GetObjectItem(data, "h");
+	S = cJSON_GetObjectItem(data, "s");
+	L = cJSON_GetObjectItem(data, "l");
+
+	if (cJSON_IsNumber(H) && cJSON_IsNumber(S) && cJSON_IsNumber(L)) {
+		return color_from_hsl(H->valuedouble, S->valuedouble, L->valuedouble);
 	}
-	
+
 	R = cJSON_GetObjectItem(data, "r");
-	if (cJSON_IsNumber(R)) {
-		newColor.red = R->valuedouble;
-	} else {
-		newColor.red = 0.0f;
-	}
 	G = cJSON_GetObjectItem(data, "g");
-	if (cJSON_IsNumber(G)) {
-		newColor.green = G->valuedouble;
-	} else {
-		newColor.green = 0.0f;
-	}
 	B = cJSON_GetObjectItem(data, "b");
-	if (cJSON_IsNumber(B)) {
-		newColor.blue = B->valuedouble;
-	} else {
-		newColor.blue = 0.0f;
-	}
 	A = cJSON_GetObjectItem(data, "a");
-	if (cJSON_IsNumber(A)) {
-		newColor.alpha = A->valuedouble;
-	} else {
-		newColor.alpha = 1.0f;
-	}
-	
-	return newColor;
+
+	return (struct color){
+		cJSON_IsNumber(R) ? R->valuedouble : 0.0f,
+		cJSON_IsNumber(G) ? G->valuedouble : 0.0f,
+		cJSON_IsNumber(B) ? B->valuedouble : 0.0f,
+		cJSON_IsNumber(A) ? A->valuedouble : 1.0f,
+	};
 }
 
 //FIXME: Convert this to use parseBsdfNode
@@ -673,22 +665,22 @@ static void parseAmbientColor(struct renderer *r, const cJSON *data) {
 	const cJSON *down = cJSON_GetObjectItem(data, "down");
 	const cJSON *up = cJSON_GetObjectItem(data, "up");
 	const cJSON *hdr = cJSON_GetObjectItem(data, "hdr");
-	
+
 	if (cJSON_IsString(hdr)) {
 		char *fullPath = stringConcat(r->prefs.assetPath, hdr->valuestring);
-		if (isValidFile(fullPath)) {
-			r->scene->background = newBackground(r->scene, newImageTexture(r->scene, load_texture(fullPath, &r->scene->nodePool), 0), NULL);
+		if (isValidFile(fullPath, r->state.file_cache)) {
+			r->scene->background = newBackground(&r->scene->storage, newImageTexture(&r->scene->storage, load_texture(fullPath, &r->scene->storage.node_pool, r->state.file_cache), 0), NULL);
 			free(fullPath);
 			return;
 		}
 	}
 	
 	if (down && up) {
-		r->scene->background = newBackground(r->scene, newGradientTexture(r->scene, parseColor(down), parseColor(up)), NULL);
+		r->scene->background = newBackground(&r->scene->storage, newGradientTexture(&r->scene->storage, parseColor(down), parseColor(up)), NULL);
 		return;
 	}
 
-	r->scene->background = newBackground(r->scene, NULL, NULL);
+	r->scene->background = newBackground(&r->scene->storage, NULL, NULL);
 }
 
 struct transform parseTransformComposite(const cJSON *transforms) {
@@ -709,25 +701,25 @@ struct transform parseTransformComposite(const cJSON *transforms) {
 	// Translates
 	for (size_t i = 0; i < count; ++i) {
 		if (isTranslate(&tforms[i])) {
-			composite.A = multiplyMatrices(composite.A.mtx, tforms[i].A.mtx);
+			composite.A = multiplyMatrices(composite.A, tforms[i].A);
 		}
 	}
 	
 	// Rotates
 	for (size_t i = 0; i < count; ++i) {
 		if (isRotation(&tforms[i])) {
-			composite.A = multiplyMatrices(composite.A.mtx, tforms[i].A.mtx);
+			composite.A = multiplyMatrices(composite.A, tforms[i].A);
 		}
 	}
 	
 	// Scales
 	for (size_t i = 0; i < count; ++i) {
 		if (isScale(&tforms[i])) {
-			composite.A = multiplyMatrices(composite.A.mtx, tforms[i].A.mtx);
+			composite.A = multiplyMatrices(composite.A, tforms[i].A);
 		}
 	}
 	
-	composite.Ainv = inverseMatrix(composite.A.mtx);
+	composite.Ainv = inverseMatrix(composite.A);
 	composite.type = transformTypeComposite;
 	free(tforms);
 	return composite;
@@ -740,7 +732,7 @@ static struct transform parseInstanceTransform(const cJSON *instance) {
 
 void apply_materials_to_instance(struct renderer *r, struct instance *instance, const cJSON *materials) {
 	for (size_t i = 0; i < (size_t)instance->material_count; ++i) {
-		try_to_guess_bsdf(r->scene, &instance->materials[i]);
+		try_to_guess_bsdf(&r->scene->storage, &instance->materials[i]);
 	}
 	if (!materials) return;
 	struct cJSON *material = NULL;
@@ -763,7 +755,7 @@ void apply_materials_to_instance(struct renderer *r, struct instance *instance, 
 				}
 				if (!found) goto skip;
 			}
-			instance->materials[i].bsdf = parseBsdfNode(r, material);
+			instance->materials[i].bsdf = parseBsdfNode(r->prefs.assetPath, r->state.file_cache, &r->scene->storage, material);
 			//FIXME: Hack
 			cJSON *type_string = cJSON_GetObjectItem(material, "type");
 			if (type_string && stringEquals(type_string->valuestring, "emissive")) {
@@ -778,7 +770,7 @@ void apply_materials_to_instance(struct renderer *r, struct instance *instance, 
 		}
 	} else {
 		// Single graph, map it to every material in a mesh.
-		const struct bsdfNode *node = parseBsdfNode(r, materials);
+		const struct bsdfNode *node = parseBsdfNode(r->prefs.assetPath, r->state.file_cache, &r->scene->storage, materials);
 		for (size_t i = 0; i < instance->material_count; ++i) {
 			instance->materials[i].bsdf = node;
 		}
@@ -809,7 +801,7 @@ static void parse_mesh_instances(struct renderer *r, const cJSON *data, struct m
 			if (cJSON_IsString(mesh_name) && !stringEquals(mesh_name->valuestring, meshes[i].name)) break;
 			struct instance new;
 			if (cJSON_IsNumber(density)) {
-				new = newMeshVolume(&meshes[i], density->valuedouble, &r->scene->nodePool);
+				new = newMeshVolume(&meshes[i], density->valuedouble, &r->scene->storage.node_pool);
 			} else {
 				//FIXME: Make newMesh*() and newSphere*() const
 				new = newMeshSolid(&meshes[i]);
@@ -841,9 +833,9 @@ static size_t parse_mesh(struct renderer *r, const cJSON *data, int idx, int mes
 	logr(info, "Loading mesh file %i/%i%s", idx, mesh_file_count, idx == mesh_file_count ? "\n" : "\r");
 	size_t valid_mesh_count = 0;
 	struct timeval timer;
-	startTimer(&timer);
-	struct mesh *meshes = load_meshes_from_file(fullPath, &valid_mesh_count);
-	long us = getUs(timer);
+	timer_start(&timer);
+	struct mesh *meshes = load_meshes_from_file(fullPath, &valid_mesh_count, r->state.file_cache);
+	long us = timer_get_us(timer);
 	free(fullPath);
 	if (!meshes) return 0;
 
@@ -905,8 +897,6 @@ static void parseSphere(struct renderer *r, const cJSON *data) {
 		} else if (stringEquals(bsdf->valuestring, "emissive")) {
 			newSphere.material.type = emission;
 		}
-	} else {
-		logr(warning, "Sphere BSDF not found, defaulting to lambertian.\n");
 	}
 	
 	color = cJSON_GetObjectItem(data, "color");
@@ -921,8 +911,6 @@ static void parseSphere(struct renderer *r, const cJSON *data) {
 				newSphere.material.diffuse = parseColor(color);
 				break;
 		}
-	} else {
-		logr(warning, "No color specified for sphere\n");
 	}
 	
 	//FIXME: Another hack.
@@ -964,7 +952,7 @@ static void parseSphere(struct renderer *r, const cJSON *data) {
 	const cJSON *instance = NULL;
 	if (cJSON_IsArray(instances)) {
 		cJSON_ArrayForEach(instance, instances) {
-			addInstanceToScene(r->scene, density ? newSphereVolume(lastSphere(r), density->valuedouble, &r->scene->nodePool) : newSphereSolid(lastSphere(r)));
+			addInstanceToScene(r->scene, density ? newSphereVolume(lastSphere(r), density->valuedouble, &r->scene->storage.node_pool) : newSphereSolid(lastSphere(r)));
 			lastInstance(r)->composite = parseInstanceTransform(instance);
 		}
 	}
@@ -972,9 +960,9 @@ static void parseSphere(struct renderer *r, const cJSON *data) {
 	const cJSON *materials = cJSON_GetObjectItem(data, "material");
 	if (materials) {
 		// Single graph, map it to every material in a mesh.
-		lastSphere(r)->material.bsdf = parseBsdfNode(r, materials);
+		lastSphere(r)->material.bsdf = parseBsdfNode(r->prefs.assetPath, r->state.file_cache, &r->scene->storage, materials);
 	} else {
-		try_to_guess_bsdf(r->scene, &lastSphere(r)->material);
+		try_to_guess_bsdf(&r->scene->storage, &lastSphere(r)->material);
 	}
 }
 

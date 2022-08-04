@@ -13,42 +13,42 @@
 
 #include "../utils/logging.h"
 #include "../utils/platform/mutex.h"
-#include "../libraries/pcg_basic.h"
+#include "../vendored/pcg_basic.h"
 #include <string.h>
 
 static void reorderTiles(struct renderTile **tiles, unsigned tileCount, enum renderOrder tileOrder);
 
 struct renderTile *nextTile(struct renderer *r) {
 	struct renderTile *tile = NULL;
-	lockMutex(r->state.tileMutex);
+	mutex_lock(r->state.tileMutex);
 	if (r->state.finishedTileCount < r->state.tileCount) {
 		tile = &r->state.renderTiles[r->state.finishedTileCount];
-		tile->isRendering = true;
+		tile->state = rendering;
 		tile->tileNum = r->state.finishedTileCount++;
 	} else {
 		// If a network worker disappeared during render, finish those tiles locally here at the end
 		for (int t = 0; t < r->state.tileCount; ++t) {
-			if (!r->state.renderTiles[t].renderComplete && r->state.renderTiles[t].networkRenderer) {
+			if (r->state.renderTiles[t].state == rendering && r->state.renderTiles[t].networkRenderer) {
 				r->state.renderTiles[t].networkRenderer = false;
 				tile = &r->state.renderTiles[t];
-				tile->isRendering = true;
+				tile->state = rendering;
 				tile->tileNum = t;
 				break;
 			}
 		}
 	}
-	releaseMutex(r->state.tileMutex);
+	mutex_release(r->state.tileMutex);
 	return tile;
 }
 
 struct renderTile *nextTileInteractive(struct renderer *r) {
 	struct renderTile *tile = NULL;
-	lockMutex(r->state.tileMutex);
+	mutex_lock(r->state.tileMutex);
 	again:
 	if (r->state.finishedPasses < r->prefs.sampleCount + 1) {
 		if (r->state.finishedTileCount < r->state.tileCount) {
 			tile = &r->state.renderTiles[r->state.finishedTileCount];
-			tile->isRendering = true;
+			tile->state = rendering;
 			tile->tileNum = r->state.finishedTileCount++;
 		} else {
 			r->state.finishedPasses++;
@@ -56,7 +56,7 @@ struct renderTile *nextTileInteractive(struct renderer *r) {
 			goto again;
 		}
 	}
-	releaseMutex(r->state.tileMutex);
+	mutex_release(r->state.tileMutex);
 	return tile;
 }
 
@@ -100,9 +100,9 @@ unsigned quantizeImage(struct renderTile **renderTiles, unsigned width, unsigned
 			
 			tile->width = tile->end.x - tile->begin.x;
 			tile->height = tile->end.y - tile->begin.y;
-			
+
+			tile->state = ready_to_render;
 			//Samples have to start at 1, so the running average works
-			tile->isRendering = false;
 			tile->tileNum = tileCount++;
 		}
 	}

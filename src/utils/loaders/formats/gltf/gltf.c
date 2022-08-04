@@ -9,7 +9,7 @@
 #include "../../../../includes.h"
 
 #include "gltf.h"
-#include "../../../../libraries/cJSON.h"
+#include "../../../../vendored/cJSON.h"
 #include "../../../string.h"
 #include "../../../base64.h"
 #include "../../../../datatypes/vector.h"
@@ -70,12 +70,12 @@ char *parse_buffer(const cJSON *data) {
 		return buffer;
 	} else {
 		// Otherwise just try to load the specified file
-		if (!isValidFile(uri_string)) {
+		if (!isValidFile(uri_string, NULL)) { //FIXME cache
 			logr(warning, "Invalid buffer while parsing glTF. File %s not found.\n", uri_string);
 			return NULL;
 		}
 		size_t loaded_bytes = 0;
-		buffer = loadFile(uri_string, &loaded_bytes);
+		buffer = loadFile(uri_string, &loaded_bytes, NULL); //FIXME cache
 		if (loaded_bytes != expected_bytes) {
 			logr(warning, "Invalid buffer while parsing glTF. Loaded file %s length %lu, expected %lu", uri_string, loaded_bytes, expected_bytes);
 		}
@@ -168,7 +168,7 @@ struct texture *parse_images(const cJSON *data, size_t *amount, const struct buf
 			const cJSON *uri = cJSON_GetObjectItem(element, "uri");
 			if (!cJSON_IsString(uri)) break;
 			char *uri_string = uri->valuestring;
-			images[i] = *load_texture(uri_string, NULL);
+			images[i] = *load_texture(uri_string, NULL, NULL); //FIXME cache
 		} else {
 			const cJSON *buffer_view = cJSON_GetObjectItem(element, "bufferView");
 			const cJSON *mime_type = cJSON_GetObjectItem(element, "mimeType");
@@ -192,7 +192,7 @@ struct mesh *parse_glb_meshes(const char *data, size_t *meshCount) {
 
 struct mesh *parse_glTF_meshes(const char *filePath, size_t *meshCount) {
 	size_t file_bytes = 0;
-	char *contents = loadFile(filePath, &file_bytes);
+	char *contents = loadFile(filePath, &file_bytes, NULL); //FIXME cache
 	if (stringStartsWith("glTF", contents)) return parse_glb_meshes(contents, meshCount);
 	const cJSON *data = cJSON_Parse(contents);
 	

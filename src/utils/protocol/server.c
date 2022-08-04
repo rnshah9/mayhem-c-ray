@@ -165,11 +165,10 @@ static cJSON *processSubmitWork(struct renderThreadState *state, const cJSON *js
 	struct texture *tileImage = decodeTexture(resultJson);
 	cJSON *tileJson = cJSON_GetObjectItem(json, "tile");
 	struct renderTile tile = decodeTile(tileJson);
-	state->renderer->state.renderTiles[tile.tileNum].isRendering = false;
-	state->renderer->state.renderTiles[tile.tileNum].renderComplete = true;
+	state->renderer->state.renderTiles[tile.tileNum].state = finished;
 	for (int y = tile.end.y - 1; y > tile.begin.y - 1; --y) {
 		for (int x = tile.begin.x; x < tile.end.x; ++x) {
-			struct color value = textureGetPixel(tileImage, x - tile.begin.x, y - tile.begin.x, false);
+			struct color value = textureGetPixel(tileImage, x - tile.begin.x, y - tile.begin.y, false);
 			setPixel(state->output, value, x, y);
 		}
 	}
@@ -246,7 +245,6 @@ void *networkRenderThread(void *arg) {
 			cJSON *avg = cJSON_GetObjectItem(request, "avgPerPass");
 			if (cJSON_IsNumber(avg)) state->avgSampleTime = avg->valuedouble;
 		} else {
-			if (!request) break;
 			cJSON *response = processClientRequest(state, request);
 			if (containsError(response)) {
 				char *err = cJSON_PrintUnformatted(response);
@@ -301,9 +299,9 @@ static void *handleClientSync(void *arg) {
 	response = NULL;
 	
 	// Send the scene & assets
-	logr(debug, "Sending scene data\n");
 	cJSON *scene = cJSON_CreateObject();
 	cJSON_AddStringToObject(scene, "action", "loadScene");
+	logr(debug, "Syncing state: %s\n", params->renderer->sceneCache);
 	cJSON *data = cJSON_Parse(params->renderer->sceneCache);
 	cJSON_AddItemToObject(scene, "data", data);
 	cJSON_AddItemToObject(scene, "files", cJSON_Parse(params->assetCache));
@@ -387,10 +385,11 @@ struct renderClient *syncWithClients(const struct renderer *r, size_t *count) {
 	struct renderClient *clients = buildClientList(&clientCount);
 	if (clientCount < 1) {
 		logr(warning, "No clients found, rendering solo.\n");
-		return 0;
+		if (count) *count = 0;
+		return NULL;
 	}
 	
-	char *assetCache = encodeFileCache();
+	char *assetCache = cache_encode(r->state.file_cache);
 	
 	size_t transfer_bytes = strlen(assetCache) + strlen(r->sceneCache);
 	char *transfer_size = humanFileSize(transfer_bytes);
@@ -427,7 +426,7 @@ struct renderClient *syncWithClients(const struct renderer *r, size_t *count) {
 			if (!params[i].done) all_stopped = false;
 		}
 		if (all_stopped) break;
-		sleepMSec(10);
+		timer_sleep_ms(10);
 		if (++loops == 10) {
 			loops = 0;
 			printProgressBars(params, clientCount);

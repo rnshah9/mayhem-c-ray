@@ -12,6 +12,14 @@
 
 struct renderer;
 struct hashtable;
+struct file_cache;
+
+struct node_storage {
+	// Scene asset memory pool, currently used for nodes only.
+	struct block *node_pool;
+	// Used for hash consing. (preventing duplicate nodes)
+	struct hashtable *node_table;
+};
 
 struct world {
 	//Optional environment map / ambient color
@@ -34,12 +42,9 @@ struct world {
 	struct camera *cameras;
 	size_t camera_count;
 	
-	// Scene asset memory pool, currently used for nodes only.
-	struct block *nodePool;
-	// Used for hash consing. (preventing duplicate nodes)
-	struct hashtable *nodeTable;
+	struct node_storage storage;
 };
 
-int loadScene(struct renderer *r, char *input);
+int loadScene(struct renderer *r, const char *input);
 
 void destroyScene(struct world *scene);

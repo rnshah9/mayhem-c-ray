@@ -17,9 +17,10 @@ static char *failed_expression;
 #include "test_fileio.h"
 #include "test_string.h"
 #include "test_hashtable.h"
-#include "test_mempool.h"
 #include "test_base64.h"
 #include "test_nodes.h"
+#include "test_linked_list.h"
+#include "test_parser.h"
 
 static test tests[] = {
 	{"vector::vecZero", vector_vecZero},
@@ -86,17 +87,6 @@ static test tests[] = {
 	
 	{"hashtable::mixed", hashtable_mixed},
 	{"hashtable::fill", hashtable_fill},
-	/*{"mempool::bigalloc", mempool_bigalloc},
-	{"mempool::tinyalloc8", mempool_tiny_8},
-	{"mempool::tinyalloc16", mempool_tiny_16},
-	{"mempool::tinyalloc32", mempool_tiny_32},
-	{"mempool::tinyalloc64", mempool_tiny_64},
-	{"mempool::tinyalloc128", mempool_tiny_128},
-	{"mempool::tinyalloc256", mempool_tiny_256},
-	{"mempool::tinyalloc512", mempool_tiny_512},
-	{"mempool::tinyalloc1024", mempool_tiny_1024},
-	{"mempool::tinyalloc2048", mempool_tiny_2048},
-	{"mempool::tinyalloc4096", mempool_tiny_4096},*/
 	
 	{"base64::basic", base64_basic},
 	{"base64::padding_2", base64_padding_2},
@@ -132,6 +122,15 @@ static test tests[] = {
 	{"vecmath::vecAbs", vecmath_vecAbs},
 	
 	{"map_range::map", map_range},
+
+	{"linked_list::basic", llist_basic},
+	{"linked_list::remove_cb", llist_remove_cb},
+	{"linked_list::remove_after_empty", llist_remove_after_empty},
+
+	{"parser::parser_color_rgb", parser_color_rgb},
+	{"parser::parser_color_array", parser_color_array},
+	{"parser::parser_color_blackbody", parser_color_blackbody},
+	{"parser::parser_color_hsl", parser_color_hsl}
 };
 
 #define testCount (sizeof(tests) / sizeof(test))

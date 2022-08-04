@@ -10,16 +10,16 @@
 
 time_t base64_bigfile_encode(void) {
 	size_t bytes = 0;
-	char *bigfile = loadFile("input/venusscaled.obj", &bytes);
+	char *bigfile = loadFile("input/venusscaled.obj", &bytes, NULL);
 	ASSERT(bigfile);
 	
 	struct timeval test;
-	startTimer(&test);
+	timer_start(&test);
 	
 	char *encoded = b64encode(bigfile, bytes);
 	(void)encoded;
 	
-	time_t us = getUs(test);
+	time_t us = timer_get_us(test);
 	free(bigfile);
 	free(encoded);
 	return us;
@@ -27,19 +27,19 @@ time_t base64_bigfile_encode(void) {
 
 time_t base64_bigfile_decode(void) {
 	size_t bytes = 0;
-	char *bigfile = loadFile("input/venusscaled.obj", &bytes);
+	char *bigfile = loadFile("input/venusscaled.obj", &bytes, NULL);
 	ASSERT(bigfile);
 	
 	char *encoded = b64encode(bigfile, bytes);
 	size_t encodedLength = strlen(encoded);
 	
 	struct timeval test;
-	startTimer(&test);
+	timer_start(&test);
 	
 	char *decoded = b64decode(encoded, encodedLength, NULL);
 	(void)decoded;
 	
-	time_t us = getUs(test);
+	time_t us = timer_get_us(test);
 	free(bigfile);
 	free(encoded);
 	free(decoded);

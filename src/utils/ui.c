@@ -37,7 +37,7 @@ struct display {
 	unsigned height;
 };
 
-static bool aborted = false;
+static bool g_aborted = false;
 
 //FIXME: This won't work on linux, it'll just abort the execution.
 //Take a look at the docs for sigaction() and implement that.
@@ -45,13 +45,13 @@ void sigHandler(int sig) {
 	if (sig == 2) { //SIGINT
 		logr(plain, "\n");
 		logr(info, "Received ^C, aborting render without saving\n");
-		aborted = true;
+		g_aborted = true;
 	}
 }
 
 #ifdef CRAY_SDL_ENABLED
 
-static struct display *gdisplay = NULL;
+static struct display *g_display = NULL;
 
 static void setWindowIcon(SDL_Window *window) {
 #ifndef NO_LOGO
@@ -87,14 +87,14 @@ static void setWindowIcon(SDL_Window *window) {
 
 void initDisplay(bool fullscreen, bool borderless, int width, int height, float scale) {
 #ifdef CRAY_SDL_ENABLED
-	ASSERT(!gdisplay);
-	gdisplay = calloc(1, sizeof(struct display));
-	
-	gdisplay->isFullScreen = fullscreen;
-	gdisplay->isBorderless = borderless;
-	gdisplay->width = width;
-	gdisplay->height = height;
-	gdisplay->windowScale = scale;
+	ASSERT(!g_display);
+	g_display = calloc(1, sizeof(struct display));
+
+	g_display->isFullScreen = fullscreen;
+	g_display->isBorderless = borderless;
+	g_display->width = width;
+	g_display->height = height;
+	g_display->windowScale = scale;
 	
 	//Initialize SDL
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -107,51 +107,51 @@ void initDisplay(bool fullscreen, bool borderless, int width, int height, float 
 	if (fullscreen) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 	if (borderless) flags |= SDL_WINDOW_BORDERLESS;
 	flags |= SDL_WINDOW_RESIZABLE;
-	
-	gdisplay->window = SDL_CreateWindow("C-ray © VKoskiv 2015-2021",
-								 SDL_WINDOWPOS_UNDEFINED,
-								 SDL_WINDOWPOS_UNDEFINED,
+
+	g_display->window = SDL_CreateWindow("c-ray © vkoskiv 2015-2022",
+										 SDL_WINDOWPOS_UNDEFINED,
+										 SDL_WINDOWPOS_UNDEFINED,
 								 width * scale,
 								 height * scale,
 								 flags);
-	if (gdisplay->window == NULL) {
+	if (g_display->window == NULL) {
 		logr(warning, "Window couldn't be created, error: \"%s\"\n", SDL_GetError());
 		destroyDisplay();
 		return;
 	}
 	//Init renderer
-	gdisplay->renderer = SDL_CreateRenderer(gdisplay->window, -1, SDL_RENDERER_ACCELERATED);
-	if (gdisplay->renderer == NULL) {
+	g_display->renderer = SDL_CreateRenderer(g_display->window, -1, SDL_RENDERER_ACCELERATED);
+	if (g_display->renderer == NULL) {
 		logr(warning, "Renderer couldn't be created, error: \"%s\"\n", SDL_GetError());
 		destroyDisplay();
 		return;
 	}
 	
-	SDL_RenderSetLogicalSize(gdisplay->renderer, gdisplay->width, gdisplay->height);
+	SDL_RenderSetLogicalSize(g_display->renderer, g_display->width, g_display->height);
 	//And set blend modes
-	SDL_SetRenderDrawBlendMode(gdisplay->renderer, SDL_BLENDMODE_BLEND);
+	SDL_SetRenderDrawBlendMode(g_display->renderer, SDL_BLENDMODE_BLEND);
 	
-	SDL_RenderSetScale(gdisplay->renderer, gdisplay->windowScale, gdisplay->windowScale);
+	SDL_RenderSetScale(g_display->renderer, g_display->windowScale, g_display->windowScale);
 	//Init pixel texture
-	gdisplay->texture = SDL_CreateTexture(gdisplay->renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, gdisplay->width, gdisplay->height);
-	if (gdisplay->texture == NULL) {
+	g_display->texture = SDL_CreateTexture(g_display->renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, g_display->width, g_display->height);
+	if (g_display->texture == NULL) {
 		logr(warning, "Texture couldn't be created, error: \"%s\"\n", SDL_GetError());
 		destroyDisplay();
 		return;
 	}
 	//Init overlay texture (for UI info)
-	gdisplay->overlayTexture = SDL_CreateTexture(gdisplay->renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, gdisplay->width, gdisplay->height);
-	if (gdisplay->overlayTexture == NULL) {
+	g_display->overlayTexture = SDL_CreateTexture(g_display->renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, g_display->width, g_display->height);
+	if (g_display->overlayTexture == NULL) {
 		logr(warning, "Overlay texture couldn't be created, error: \"%s\"\n", SDL_GetError());
 		destroyDisplay();
 		return;
 	}
 	
 	//And set blend modes for textures too
-	SDL_SetTextureBlendMode(gdisplay->texture, SDL_BLENDMODE_BLEND);
-	SDL_SetTextureBlendMode(gdisplay->overlayTexture, SDL_BLENDMODE_BLEND);
+	SDL_SetTextureBlendMode(g_display->texture, SDL_BLENDMODE_BLEND);
+	SDL_SetTextureBlendMode(g_display->overlayTexture, SDL_BLENDMODE_BLEND);
 	
-	setWindowIcon(gdisplay->window);
+	setWindowIcon(g_display->window);
 	
 #else
 	(void)fullscreen; (void)borderless; (void)width; (void)height; (void)scale;
@@ -161,26 +161,26 @@ void initDisplay(bool fullscreen, bool borderless, int width, int height, float 
 
 void destroyDisplay() {
 #ifdef CRAY_SDL_ENABLED
-	if (gdisplay) {
+	if (g_display) {
 		SDL_Quit();
-		if (gdisplay->texture) {
-			SDL_DestroyTexture(gdisplay->texture);
-			gdisplay->texture = NULL;
+		if (g_display->texture) {
+			SDL_DestroyTexture(g_display->texture);
+			g_display->texture = NULL;
 		}
-		if (gdisplay->overlayTexture) {
-			SDL_DestroyTexture(gdisplay->overlayTexture);
-			gdisplay->texture = NULL;
+		if (g_display->overlayTexture) {
+			SDL_DestroyTexture(g_display->overlayTexture);
+			g_display->texture = NULL;
 		}
-		if (gdisplay->renderer) {
-			SDL_DestroyRenderer(gdisplay->renderer);
-			gdisplay->renderer = NULL;
+		if (g_display->renderer) {
+			SDL_DestroyRenderer(g_display->renderer);
+			g_display->renderer = NULL;
 		}
-		if (gdisplay->window) {
-			SDL_DestroyWindow(gdisplay->window);
-			gdisplay->window = NULL;
+		if (g_display->window) {
+			SDL_DestroyWindow(g_display->window);
+			g_display->window = NULL;
 		}
-		free(gdisplay);
-		gdisplay = NULL;
+		free(g_display);
+		g_display = NULL;
 	}
 #endif
 }
@@ -192,7 +192,7 @@ void printDuration(uint64_t ms) {
 }
 
 void getKeyboardInput(struct renderer *r) {
-	if (aborted) {
+	if (g_aborted) {
 		r->state.saveImage = false;
 		r->state.renderAborted = true;
 	}
@@ -261,14 +261,22 @@ static void drawProgressBars(struct renderer *r) {
 			
 			float prc = ((float)completedSamples / (float)totalSamples);
 			int pixels2draw = (int)((float)temp->width * prc);
+
+			struct color c = temp->state == rendering ? progColor : clearColor;
 			
 			//And then draw the bar
 			for (int i = 0; i < pixels2draw; ++i) {
-				setPixel(r->state.uiBuffer, progColor, temp->begin.x + i, (temp->begin.y + (temp->height / 5)) - 1);
-				setPixel(r->state.uiBuffer, progColor, temp->begin.x + i, (temp->begin.y + (temp->height / 5))    );
-				setPixel(r->state.uiBuffer, progColor, temp->begin.x + i, (temp->begin.y + (temp->height / 5)) + 1);
+				setPixel(r->state.uiBuffer, c, temp->begin.x + i, (temp->begin.y + (temp->height / 5)) - 1);
+				setPixel(r->state.uiBuffer, c, temp->begin.x + i, (temp->begin.y + (temp->height / 5))    );
+				setPixel(r->state.uiBuffer, c, temp->begin.x + i, (temp->begin.y + (temp->height / 5)) + 1);
 			}
 		}
+	}
+	for (int i = 0; i < r->state.tileCount; ++i) {
+		if (r->state.renderTiles[i].state == finished) {
+			clearProgBar(r, r->state.renderTiles[i]);
+		}
+
 	}
 }
 
@@ -278,66 +286,56 @@ static void drawProgressBars(struct renderer *r) {
  @param r Renderer
  @param tile Given renderTile
  */
-static void drawFrame(struct renderer *r, struct renderTile tile) {
+static void drawFrame(struct texture *buf, struct renderTile tile, struct color c) {
 	unsigned length = tile.width  <= 16 ? 4 : 8;
 			 length = tile.height <= 16 ? 4 : 8;
 	length = length > tile.width ? tile.width : length;
 	length = length > tile.height ? tile.height : length;
-	struct color c = clearColor;
-	if (tile.isRendering) {
-		c = frameColor;
-	} else if (tile.renderComplete) {
-		c = clearColor;
-	} else {
-		return;
-	}
+
 	for (unsigned i = 1; i < length; ++i) {
 		//top left
-		setPixel(r->state.uiBuffer, c, tile.begin.x + i, tile.begin.y + 1);
-		setPixel(r->state.uiBuffer, c, tile.begin.x + 1, tile.begin.y + i);
+		setPixel(buf, c, tile.begin.x + i, tile.begin.y + 1);
+		setPixel(buf, c, tile.begin.x + 1, tile.begin.y + i);
 		
 		//top right
-		setPixel(r->state.uiBuffer, c, tile.end.x - i, tile.begin.y + 1);
-		setPixel(r->state.uiBuffer, c, tile.end.x - 1, tile.begin.y + i);
+		setPixel(buf, c, tile.end.x - i, tile.begin.y + 1);
+		setPixel(buf, c, tile.end.x - 1, tile.begin.y + i);
 		
 		//Bottom left
-		setPixel(r->state.uiBuffer, c, tile.begin.x + i, tile.end.y - 1);
-		setPixel(r->state.uiBuffer, c, tile.begin.x + 1, tile.end.y - i);
+		setPixel(buf, c, tile.begin.x + i, tile.end.y - 1);
+		setPixel(buf, c, tile.begin.x + 1, tile.end.y - i);
 		
 		//bottom right
-		setPixel(r->state.uiBuffer, c, tile.end.x - i, tile.end.y - 1);
-		setPixel(r->state.uiBuffer, c, tile.end.x - 1, tile.end.y - i);
+		setPixel(buf, c, tile.end.x - i, tile.end.y - 1);
+		setPixel(buf, c, tile.end.x - 1, tile.end.y - i);
 	}
 }
 
 static void updateFrames(struct renderer *r) {
 	if (r->prefs.tileWidth < 8 || r->prefs.tileHeight < 8) return;
 	for (int i = 0; i < r->state.tileCount; ++i) {
-		//For every tile, if it's currently rendering, draw the frame
-		//If it is NOT rendering, clear any frame present
-		drawFrame(r, r->state.renderTiles[i]);
-		if (r->state.renderTiles[i].renderComplete) {
-			clearProgBar(r, r->state.renderTiles[i]);
-		}
+		struct renderTile tile = r->state.renderTiles[i];
+		struct color c = tile.state == rendering ? frameColor : clearColor;
+		drawFrame(r->state.uiBuffer, tile, c);
 	}
-	drawProgressBars(r);
 }
 #endif
 
 void drawWindow(struct renderer *r, struct texture *t) {
-	if (aborted) {
-		r->state.renderAborted = true;
-	}
+	if (g_aborted) r->state.renderAborted = true;
 #ifdef CRAY_SDL_ENABLED
-	if (!gdisplay) return;
+	if (!g_display) return;
 	//Render frames
-	if (!isSet("interactive") || r->state.clients) updateFrames(r);
+	if (!isSet("interactive") || r->state.clients) {
+		updateFrames(r);
+		drawProgressBars(r);
+	}
 	//Update image data
-	SDL_UpdateTexture(gdisplay->texture, NULL, t->data.byte_p, (int)t->width * 3);
-	SDL_UpdateTexture(gdisplay->overlayTexture, NULL, r->state.uiBuffer->data.byte_p, (int)t->width * 4);
-	SDL_RenderCopy(gdisplay->renderer, gdisplay->texture, NULL, NULL);
-	SDL_RenderCopy(gdisplay->renderer, gdisplay->overlayTexture, NULL, NULL);
-	SDL_RenderPresent(gdisplay->renderer);
+	SDL_UpdateTexture(g_display->texture, NULL, t->data.byte_p, (int)t->width * 3);
+	SDL_UpdateTexture(g_display->overlayTexture, NULL, r->state.uiBuffer->data.byte_p, (int)t->width * 4);
+	SDL_RenderCopy(g_display->renderer, g_display->texture, NULL, NULL);
+	SDL_RenderCopy(g_display->renderer, g_display->overlayTexture, NULL, NULL);
+	SDL_RenderPresent(g_display->renderer);
 #else
 	(void)t;
 #endif

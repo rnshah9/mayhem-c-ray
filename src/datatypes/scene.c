@@ -21,7 +21,7 @@
 #include "mesh.h"
 #include "poly.h"
 #include "../utils/platform/thread.h"
-#include "../datatypes/instance.h"
+#include "../renderer/instance.h"
 #include "../datatypes/bbox.h"
 #include "../utils/mempool.h"
 #include "../utils/hashtable.h"
@@ -43,7 +43,7 @@ void *bvhBuildThread(void *arg) {
 static void computeAccels(struct mesh *meshes, int meshCount) {
 	logr(info, "Computing BVHs: ");
 	struct timeval timer = {0};
-	startTimer(&timer);
+	timer_start(&timer);
 	struct bvhBuildTask *tasks = calloc(meshCount, sizeof(*tasks));
 	struct crThread *buildThreads = calloc(meshCount, sizeof(*buildThreads));
 	for (int t = 0; t < meshCount; ++t) {
@@ -63,7 +63,7 @@ static void computeAccels(struct mesh *meshes, int meshCount) {
 		threadWait(&buildThreads[t]);
 		meshes[t].bvh = tasks[t].bvh;
 	}
-	printSmartTime(getMs(timer));
+	printSmartTime(timer_get_ms(timer));
 	free(tasks);
 	free(buildThreads);
 	logr(plain, "\n");
@@ -72,9 +72,9 @@ static void computeAccels(struct mesh *meshes, int meshCount) {
 struct bvh *computeTopLevelBvh(struct instance *instances, int instanceCount) {
 	logr(info, "Computing top-level BVH: ");
 	struct timeval timer = {0};
-	startTimer(&timer);
+	timer_start(&timer);
 	struct bvh *new = buildTopLevelBvh(instances, instanceCount);
-	printSmartTime(getMs(timer));
+	printSmartTime(timer_get_ms(timer));
 	logr(plain, "\n");
 	return new;
 }
@@ -105,14 +105,13 @@ static void printSceneStats(struct world *scene, unsigned long long ms) {
 		   scene->meshCount);
 }
 
-#include "../utils/filecache.h"
 //Split scene loading and prefs?
 //Load the scene, allocate buffers, etc
 //FIXME: Rename this func and take parseJSON out to a separate call.
-int loadScene(struct renderer *r, char *input) {
+int loadScene(struct renderer *r, const char *input) {
 	
 	struct timeval timer = {0};
-	startTimer(&timer);
+	timer_start(&timer);
 	
 	//Load configuration and assets
 	switch (parseJSON(r, input)) {
@@ -129,40 +128,55 @@ int loadScene(struct renderer *r, char *input) {
 			break;
 	}
 	
+	// This is where we prepare a cache of scene data to be sent to worker nodes
+	// We also apply any potential command-line overrides to that cache here as well.
+	// FIXME: This overrides setting should be integrated with scene loading, probably.
 	if (isSet("use_clustering")) {
 		// Stash a cache of scene data here
 		cJSON *cache = cJSON_Parse(input);
 		// Apply overrides to the cache here
 		if (isSet("samples_override")) {
 			cJSON *renderer = cJSON_GetObjectItem(cache, "renderer");
-			if (cJSON_IsObject(renderer) && cJSON_IsNumber(cJSON_GetObjectItem(renderer, "samples"))) {
+			if (cJSON_IsObject(renderer)) {
 				int samples = intPref("samples_override");
 				logr(debug, "Overriding cache sample count to %i\n", samples);
-				cJSON_ReplaceItemInObject(renderer, "samples", cJSON_CreateNumber(samples));
+				if (cJSON_IsNumber(cJSON_GetObjectItem(renderer, "samples"))) {
+					cJSON_ReplaceItemInObject(renderer, "samples", cJSON_CreateNumber(samples));
+				} else {
+					cJSON_AddItemToObject(renderer, "samples", cJSON_CreateNumber(samples));
+				}
 			}
 		}
 		
 		if (isSet("dims_override")) {
 			cJSON *renderer = cJSON_GetObjectItem(cache, "renderer");
-			int width = intPref("dims_width");
-			int height = intPref("dims_height");
 			if (cJSON_IsObject(renderer)) {
+				int width = intPref("dims_width");
+				int height = intPref("dims_height");
 				logr(info, "Overriding cache image dimensions to %ix%i\n", width, height);
-				cJSON_AddItemToObject(renderer, "width", cJSON_CreateNumber(width));
-				cJSON_AddItemToObject(renderer, "height", cJSON_CreateNumber(height));
+				if (cJSON_IsNumber(cJSON_GetObjectItem(renderer, "width")) && cJSON_IsNumber(cJSON_GetObjectItem(renderer, "height"))) {
+					cJSON_ReplaceItemInObject(renderer, "width", cJSON_CreateNumber(width));
+					cJSON_ReplaceItemInObject(renderer, "height", cJSON_CreateNumber(height));
+				} else {
+					cJSON_AddItemToObject(renderer, "width", cJSON_CreateNumber(width));
+					cJSON_AddItemToObject(renderer, "height", cJSON_CreateNumber(height));
+				}
 			}
 		}
 		
 		if (isSet("tiledims_override")) {
 			cJSON *renderer = cJSON_GetObjectItem(cache, "renderer");
-			int width = intPref("tile_width");
-			int height = intPref("tile_height");
-			if (cJSON_IsObject(renderer)
-				&& cJSON_IsNumber(cJSON_GetObjectItem(renderer, "tileWidth"))
-				&& cJSON_IsNumber(cJSON_GetObjectItem(renderer, "tileHeight"))) {
+			if (cJSON_IsObject(renderer)) {
+				int width = intPref("tile_width");
+				int height = intPref("tile_height");
 				logr(info, "Overriding cache tile dimensions to %ix%i\n", width, height);
-				cJSON_ReplaceItemInObject(renderer, "tileWidth", cJSON_CreateNumber(width));
-				cJSON_ReplaceItemInObject(renderer, "tileHeight", cJSON_CreateNumber(height));
+				if (cJSON_IsNumber(cJSON_GetObjectItem(renderer, "tileWidth")) && cJSON_IsNumber(cJSON_GetObjectItem(renderer, "tileHeight"))) {
+					cJSON_ReplaceItemInObject(renderer, "tileWidth", cJSON_CreateNumber(width));
+					cJSON_ReplaceItemInObject(renderer, "tileHeight", cJSON_CreateNumber(height));
+				} else {
+					cJSON_AddItemToObject(renderer, "tileWidth", cJSON_CreateNumber(width));
+					cJSON_AddItemToObject(renderer, "tileHeight", cJSON_CreateNumber(height));
+				}
 			}
 		}
 
@@ -170,6 +184,7 @@ int loadScene(struct renderer *r, char *input) {
 			cJSON_AddItemToObject(cache, "selected_camera", cJSON_CreateNumber(r->prefs.selected_camera));
 		}
 
+		// Store cache. This is what gets sent to worker nodes.
 		r->sceneCache = cJSON_PrintUnformatted(cache);
 	}
 	
@@ -179,7 +194,7 @@ int loadScene(struct renderer *r, char *input) {
 		computeAccels(r->scene->meshes, r->scene->meshCount);
 		// And then compute a single top-level BVH that contains all the objects
 		r->scene->topLevel = computeTopLevelBvh(r->scene->instances, r->scene->instanceCount);
-		printSceneStats(r->scene, getMs(timer));
+		printSceneStats(r->scene, timer_get_ms(timer));
 	} else {
 		logr(debug, "No local render threads, skipping local BVH construction.\n");
 	}
@@ -221,8 +236,8 @@ void destroyScene(struct world *scene) {
 			destroyMesh(&scene->meshes[i]);
 		}
 		destroyBvh(scene->topLevel);
-		destroyHashtable(scene->nodeTable);
-		destroyBlocks(scene->nodePool);
+		destroyHashtable(scene->storage.node_table);
+		destroyBlocks(scene->storage.node_pool);
 		free(scene->instances);
 		free(scene->meshes);
 		free(scene->spheres);

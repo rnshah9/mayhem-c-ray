@@ -170,7 +170,7 @@ struct texture *renderFrame(struct renderer *r) {
 				r->state.isRendering = false;
 			}
 		}
-		sleepMSec(r->state.threadStates[0].paused ? paused_msec : active_msec);
+		timer_sleep_ms(r->state.threadStates[0].paused ? paused_msec : active_msec);
 	}
 	
 	//Make sure render threads are terminated before continuing (This blocks)
@@ -201,8 +201,8 @@ void *renderThreadInteractive(void *arg) {
 	
 	while (tile && r->state.isRendering) {
 		long totalUsec = 0;
-		
-		startTimer(&timer);
+
+		timer_start(&timer);
 		for (int y = tile->end.y - 1; y > tile->begin.y - 1; --y) {
 			for (int x = tile->begin.x; x < tile->end.x; ++x) {
 				if (r->state.renderAborted) return 0;
@@ -233,17 +233,17 @@ void *renderThreadInteractive(void *arg) {
 			}
 		}
 		//For performance metrics
-		totalUsec += getUs(timer);
+		totalUsec += timer_get_us(timer);
 		threadState->totalSamples++;
 		threadState->completedSamples++;
 		//Pause rendering when bool is set
 		while (threadState->paused && !r->state.renderAborted) {
-			sleepMSec(100);
+			timer_sleep_ms(100);
 		}
 		threadState->avgSampleTime = totalUsec / r->state.finishedPasses;
 		
 		//Tile has finished rendering, get a new one and start rendering it.
-		if (tile) tile->isRendering = false;
+		tile->state = finished;
 		threadState->currentTile = NULL;
 		threadState->completedSamples = r->state.finishedPasses;
 		tile = nextTileInteractive(r);
@@ -282,7 +282,7 @@ void *renderThread(void *arg) {
 		long samples = 0;
 		
 		while (threadState->completedSamples < r->prefs.sampleCount + 1 && r->state.isRendering) {
-			startTimer(&timer);
+			timer_start(&timer);
 			for (int y = tile->end.y - 1; y > tile->begin.y - 1; --y) {
 				for (int x = tile->begin.x; x < tile->end.x; ++x) {
 					if (r->state.renderAborted) return 0;
@@ -311,18 +311,17 @@ void *renderThread(void *arg) {
 			}
 			//For performance metrics
 			samples++;
-			totalUsec += getUs(timer);
+			totalUsec += timer_get_us(timer);
 			threadState->totalSamples++;
 			threadState->completedSamples++;
 			//Pause rendering when bool is set
 			while (threadState->paused && !r->state.renderAborted) {
-				sleepMSec(100);
+				timer_sleep_ms(100);
 			}
 			threadState->avgSampleTime = totalUsec / samples;
 		}
 		//Tile has finished rendering, get a new one and start rendering it.
-		tile->isRendering = false;
-		tile->renderComplete = true;
+		tile->state = finished;
 		threadState->currentTile = NULL;
 		threadState->completedSamples = 1;
 		tile = nextTile(r);
@@ -365,11 +364,12 @@ struct renderer *newRenderer() {
 	r->state.timeSampleCount = 1;
 	r->state.finishedPasses = 1;
 	
-	r->state.tileMutex = createMutex();
+	r->state.tileMutex = mutex_create();
+	if (isSet("use_clustering")) r->state.file_cache = calloc(1, sizeof(struct file_cache));
 
 	r->scene = calloc(1, sizeof(*r->scene));
-	r->scene->nodePool = newBlock(NULL, 1024);
-	r->scene->nodeTable = newHashtable(compareNodes, &r->scene->nodePool);
+	r->scene->storage.node_pool = newBlock(NULL, 1024);
+	r->scene->storage.node_table = newHashtable(compareNodes, &r->scene->storage.node_pool);
 	return r;
 }
 	
@@ -382,6 +382,10 @@ void destroyRenderer(struct renderer *r) {
 		free(r->state.threads);
 		free(r->state.threadStates);
 		free(r->state.tileMutex);
+		if (r->state.file_cache) {
+			cache_destroy(r->state.file_cache);
+			free(r->state.file_cache);
+		}
 		free(r->prefs.imgFileName);
 		free(r->prefs.imgFilePath);
 		free(r->prefs.assetPath);

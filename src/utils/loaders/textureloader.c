@@ -16,8 +16,8 @@
 #define STBI_NO_PSD
 #define STBI_NO_GIF
 #define STB_IMAGE_IMPLEMENTATION
-#include "../../libraries/stb_image.h"
-#include "../../libraries/qoi.h" // encoder defines implementation macro already
+#include "../../vendored/stb_image.h"
+#include "../../vendored/qoi.h" // encoder defines implementation macro already
 
 // I don't want to mess with memory allocation within the different
 // image parsing libs, so I just copy out to a pool afterwards.
@@ -76,11 +76,11 @@ struct texture *load_texture_from_buffer(const unsigned char *buffer, const unsi
 	return new;
 }
 
-struct texture *load_texture(char *filePath, struct block **pool) {
+struct texture *load_texture(char *filePath, struct block **pool, struct file_cache *cache) {
 	size_t len = 0;
 	//Handle the trailing newline here
 	filePath[strcspn(filePath, "\n")] = 0;
-	unsigned char *file = (unsigned char*)loadFile(filePath, &len);
+	unsigned char *file = (unsigned char*)loadFile(filePath, &len, cache);
 	if (!file) return NULL;
 	
 	enum fileType type = guessFileType(filePath);

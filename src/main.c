@@ -11,7 +11,7 @@
 #include "c-ray.h"
 
 int main(int argc, char *argv[]) {
-	cr_log("C-ray v%s%s [%.8s], © 2015-2022 Valtteri Koskivuori\n", cr_get_version(), is_debug() ? "D" : "", cr_get_git_hash());
+	cr_log("c-ray v%s%s [%.8s], © 2015-2022 Valtteri Koskivuori\n", cr_get_version(), is_debug() ? "D" : "", cr_get_git_hash());
 	cr_initialize();
 	cr_parse_args(argc, argv);
 	struct renderer *renderer = cr_new_renderer();
@@ -25,7 +25,13 @@ int main(int argc, char *argv[]) {
 			return -1;
 		}
 		cr_log("%zi bytes of input JSON loaded from %s, parsing.\n", bytes, cr_is_option_set("inputFile") ? "file" : "stdin");
-		cr_load_scene_from_buf(renderer, input);
+		if (cr_load_scene_from_buf(renderer, input) < 0) {
+			cr_log("Scene parse failed, exiting.\n");
+			free(input);
+			cr_destroy_renderer(renderer);
+			cr_destroy_options();
+			return 0;
+		}
 		free(input);
 
 		cr_start_renderer(renderer);
